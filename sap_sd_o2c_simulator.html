@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SAP SD — Order-to-Cash Simulator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f3; color: #1a1a18; min-height: 100vh; padding: 2rem 1rem; }
+    .container { max-width: 780px; margin: 0 auto; }
+    .top-bar { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 8px; }
+    .top-title { font-size: 20px; font-weight: 600; color: #1a1a18; }
+    .top-sub { font-size: 13px; color: #5f5e5a; margin-top: 3px; }
+    .pct-label { font-size: 13px; color: #5f5e5a; white-space: nowrap; }
+    .progress-bar { background: #d3d1c7; border-radius: 99px; height: 6px; margin-bottom: 1.5rem; overflow: hidden; }
+    .progress-fill { height: 100%; background: #1d9e75; border-radius: 99px; transition: width 0.4s ease; }
+    .stages { display: flex; gap: 0; margin-bottom: 1.5rem; overflow-x: auto; border-radius: 10px; overflow: hidden; border: 0.5px solid #d3d1c7; }
+    .stage-btn { flex: 1; min-width: 80px; padding: 10px 6px; border: none; border-right: 0.5px solid #d3d1c7; background: #fff; cursor: pointer; text-align: center; transition: background 0.2s; }
+    .stage-btn:last-child { border-right: none; }
+    .stage-btn.done { background: #e1f5ee; }
+    .stage-btn.active { background: #e6f1fb; outline: 2px solid #378add; outline-offset: -2px; z-index: 1; position: relative; }
+    .stage-btn .s-num { font-size: 10px; color: #888780; margin-bottom: 2px; }
+    .stage-btn.done .s-num { color: #0f6e56; }
+    .stage-btn.active .s-num { color: #185fa5; }
+    .stage-btn .s-label { font-size: 12px; font-weight: 500; color: #1a1a18; line-height: 1.3; }
+    .stage-btn.done .s-label { color: #085041; }
+    .stage-btn.active .s-label { color: #0c447c; }
+    .stage-btn .s-check { font-size: 13px; margin-bottom: 2px; }
+    .tracker { background: #fff; border: 0.5px solid #d3d1c7; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    .tracker-title { font-size: 11px; color: #888780; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+    .tracker-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+    .tracker-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .tracker-dot.done { background: #1d9e75; }
+    .tracker-dot.active { background: #378add; }
+    .tracker-dot.pending { background: #d3d1c7; }
+    .tracker-label { font-size: 13px; }
+    .tracker-label.done { color: #5f5e5a; }
+    .tracker-label.active { color: #1a1a18; font-weight: 500; }
+    .tracker-label.pending { color: #b4b2a9; }
+    .tracker-docnum { font-family: 'SF Mono', 'Consolas', monospace; font-size: 11px; color: #b4b2a9; margin-left: auto; }
+    .detail-card { background: #fff; border: 0.5px solid #d3d1c7; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+    .detail-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1rem; gap: 10px; flex-wrap: wrap; }
+    .detail-title { font-size: 16px; font-weight: 600; color: #1a1a18; }
+    .detail-tcode { font-size: 13px; color: #5f5e5a; margin-top: 3px; }
+    .detail-tcode span { font-family: 'SF Mono', 'Consolas', monospace; }
+    .doc-badge { font-size: 12px; font-family: 'SF Mono', 'Consolas', monospace; background: #f1efe8; padding: 4px 10px; border-radius: 8px; color: #5f5e5a; white-space: nowrap; }
+    .detail-desc { font-size: 14px; color: #444441; line-height: 1.75; margin-bottom: 1rem; }
+    .fields-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 1rem; }
+    .field-box { background: #f5f5f3; border-radius: 8px; padding: 10px 12px; }
+    .field-label { font-size: 10px; color: #888780; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 3px; }
+    .field-val { font-size: 13px; font-weight: 500; color: #1a1a18; font-family: 'SF Mono', 'Consolas', monospace; }
+    .tags-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1rem; }
+    .tag { font-size: 12px; padding: 3px 10px; border-radius: 8px; }
+    .tag-blue { background: #e6f1fb; color: #185fa5; }
+    .tag-teal { background: #e1f5ee; color: #0f6e56; }
+    .tag-amber { background: #faeeda; color: #854f0b; }
+    .tag-gray { background: #f1efe8; color: #5f5e5a; }
+    .note-warn { background: #faeeda; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #633806; line-height: 1.6; margin-bottom: 1rem; }
+    .note-success { background: #e1f5ee; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #085041; line-height: 1.6; margin-bottom: 1rem; }
+    .nav-row { display: flex; gap: 10px; justify-content: space-between; align-items: center; }
+    .nav-btn { padding: 9px 22px; border: 1px solid #d3d1c7; border-radius: 8px; cursor: pointer; background: #fff; color: #1a1a18; font-size: 14px; transition: background 0.15s; }
+    .nav-btn:hover:not(:disabled) { background: #f1efe8; }
+    .nav-btn:disabled { opacity: 0.3; cursor: default; }
+    .nav-btn.primary { background: #e6f1fb; border-color: #85b7eb; color: #0c447c; font-weight: 500; }
+    .nav-btn.primary:hover { background: #b5d4f4; }
+    .step-ind { font-size: 13px; color: #5f5e5a; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="top-bar">
+    <div>
+      <div class="top-title">SAP SD — Order-to-Cash Simulator</div>
+      <div class="top-sub">Customer: Infosys Ltd &nbsp;|&nbsp; Material: Software License &nbsp;|&nbsp; Sales Org: 1000</div>
+    </div>
+    <div class="pct-label" id="pct-label">0% complete</div>
+  </div>
+
+  <div class="progress-bar"><div class="progress-fill" id="prog" style="width:0%"></div></div>
+  <div class="stages" id="stages-bar"></div>
+
+  <div class="tracker">
+    <div class="tracker-title">Document trail</div>
+    <div id="tracker-list"></div>
+  </div>
+
+  <div class="detail-card" id="detail-card"></div>
+
+  <div class="nav-row">
+    <button class="nav-btn" id="btn-prev" onclick="navigate(-1)" disabled>← Previous</button>
+    <span class="step-ind" id="step-ind">Stage 1 of 6</span>
+    <button class="nav-btn primary" id="btn-next" onclick="navigate(1)">Process →</button>
+  </div>
+</div>
+
+<script>
+const stages = [
+  {
+    label: "Inquiry", doc: "VA11 — Inquiry", docNum: "10000123", tcode: "VA11 / VA12 / VA13",
+    desc: "The customer (Infosys Ltd) contacts your sales team expressing interest in a Software License. You create an Inquiry document to capture their requirements — no commitment yet, just a formal record of interest.",
+    fields: [
+      { label: "Inquiry type", val: "IN" }, { label: "Sales org", val: "1000" },
+      { label: "Distribution channel", val: "10" }, { label: "Division", val: "00" },
+      { label: "Sold-to party", val: "100023" }, { label: "Material", val: "SW-LIC-001" }
+    ],
+    tags: [{ text: "Document type: IN", cls: "tag-blue" }, { text: "No stock impact", cls: "tag-gray" }, { text: "No accounting entry", cls: "tag-gray" }],
+    note: null, noteType: null
+  },
+  {
+    label: "Quotation", doc: "VA21 — Quotation", docNum: "20000456", tcode: "VA21 / VA22 / VA23",
+    desc: "Based on the Inquiry, you create a Quotation with a valid price offer. The pricing procedure (RVAA01) kicks in — PR00 condition type applies the base price. The quotation has a validity period (30 days). Copy control from IN → QT is used.",
+    fields: [
+      { label: "Quotation type", val: "QT" }, { label: "Valid from", val: "19.04.2026" },
+      { label: "Valid to", val: "19.05.2026" }, { label: "Net value", val: "₹4,50,000" },
+      { label: "Pricing procedure", val: "RVAA01" }, { label: "Condition type", val: "PR00" }
+    ],
+    tags: [{ text: "Copy control: IN→QT", cls: "tag-blue" }, { text: "Pricing: PR00", cls: "tag-teal" }, { text: "Validity period set", cls: "tag-amber" }],
+    note: "Check customer credit limit before quoting. Transaction FD33 shows customer credit exposure.", noteType: "warn"
+  },
+  {
+    label: "Sales Order", doc: "VA01 — Sales Order", docNum: "30001089", tcode: "VA01 / VA02 / VA03",
+    desc: "The customer confirms the quote. You create a Sales Order (OR) referencing the Quotation. The system copies all data via copy control (QT→OR). Item category TAN is determined. Schedule lines confirm availability. Partner functions (SP, SH, BP, PY) are assigned.",
+    fields: [
+      { label: "Order type", val: "OR" }, { label: "Item category", val: "TAN" },
+      { label: "Schedule line cat.", val: "CP" }, { label: "Requested del. date", val: "26.04.2026" },
+      { label: "Payment terms", val: "NT30" }, { label: "Incoterms", val: "CIF Mumbai" }
+    ],
+    tags: [{ text: "Item cat: TAN", cls: "tag-blue" }, { text: "Partner fns: SP/SH/BP/PY", cls: "tag-teal" }, { text: "Copy control: QT→OR", cls: "tag-teal" }, { text: "Credit check triggered", cls: "tag-amber" }],
+    note: null, noteType: null
+  },
+  {
+    label: "Delivery", doc: "VL01N — Outbound Delivery", docNum: "80000234", tcode: "VL01N / VL02N / VL04",
+    desc: "Once the sales order is confirmed, you create an Outbound Delivery (LF). The system checks the shipping point, route, and picking quantities. Goods Issue (GI) is posted — this is the critical step where inventory is reduced and COGS is booked in FI.",
+    fields: [
+      { label: "Delivery type", val: "LF" }, { label: "Shipping point", val: "1000" },
+      { label: "Actual GI date", val: "25.04.2026" }, { label: "Movement type", val: "601" },
+      { label: "Storage location", val: "0001" }, { label: "Pick status", val: "C (completed)" }
+    ],
+    tags: [{ text: "Movement type: 601", cls: "tag-amber" }, { text: "GI reduces stock", cls: "tag-amber" }, { text: "COGS posted to FI", cls: "tag-blue" }],
+    note: "Goods Issue is the point of no return — stock leaves inventory. Coordinate with WM/IM team before posting GI.", noteType: "warn"
+  },
+  {
+    label: "Billing", doc: "VF01 — Billing Document", docNum: "90000567", tcode: "VF01 / VF02 / VF04",
+    desc: "After Goods Issue, you create the Billing Document (F2 invoice) referencing the delivery. The system runs the pricing procedure again to confirm net value. The billing document triggers an FI accounting document — revenue is recognised and AR (accounts receivable) is created.",
+    fields: [
+      { label: "Billing type", val: "F2" }, { label: "Billing date", val: "25.04.2026" },
+      { label: "Net value", val: "₹4,50,000" }, { label: "Tax (GST 18%)", val: "₹81,000" },
+      { label: "Total", val: "₹5,31,000" }, { label: "FI doc created", val: "Yes — via VKOA" }
+    ],
+    tags: [{ text: "Billing type: F2", cls: "tag-blue" }, { text: "Revenue recognised", cls: "tag-teal" }, { text: "AR entry in FI", cls: "tag-teal" }, { text: "VKOA account key", cls: "tag-gray" }],
+    note: null, noteType: null
+  },
+  {
+    label: "Payment", doc: "F-28 — Incoming Payment", docNum: "14000890", tcode: "F-28 / FB05 / FBL5N",
+    desc: "The customer pays within 30 days (per NT30 payment terms). Finance posts the incoming payment using F-28, clearing the open AR item. The O2C cycle is now complete — the sales order, delivery, and invoice are all fully processed and closed.",
+    fields: [
+      { label: "Payment method", val: "T (bank transfer)" }, { label: "Posting date", val: "25.05.2026" },
+      { label: "Amount received", val: "₹5,31,000" }, { label: "Clearing doc", val: "14000890" },
+      { label: "Customer account", val: "100023" }, { label: "Status", val: "Cleared" }
+    ],
+    tags: [{ text: "AR cleared", cls: "tag-teal" }, { text: "O2C cycle complete", cls: "tag-teal" }, { text: "Check via FBL5N", cls: "tag-gray" }],
+    note: "Full cycle complete! Sales order 30001089 is fully processed. Verify the document flow in VA03 → Environment → Display document flow.", noteType: "success"
+  }
+];
+
+let current = 0;
+
+function render() {
+  const s = stages[current];
+  const pct = Math.round(((current + 1) / stages.length) * 100);
+  document.getElementById('prog').style.width = pct + '%';
+  document.getElementById('pct-label').textContent = pct + '% complete';
+  document.getElementById('step-ind').textContent = 'Stage ' + (current + 1) + ' of ' + stages.length;
+  document.getElementById('btn-prev').disabled = current === 0;
+  document.getElementById('btn-next').disabled = current === stages.length - 1;
+  document.getElementById('btn-next').textContent = current === stages.length - 1 ? 'Done ✓' : 'Process →';
+
+  document.getElementById('stages-bar').innerHTML = stages.map((st, i) => {
+    let cls = 'stage-btn' + (i < current ? ' done' : i === current ? ' active' : '');
+    const check = i < current ? '✓' : (i === current ? '◉' : '○');
+    return `<button class="${cls}" onclick="goTo(${i})"><div class="s-check">${check}</div><div class="s-num">Step ${i+1}</div><div class="s-label">${st.label}</div></button>`;
+  }).join('');
+
+  document.getElementById('tracker-list').innerHTML = stages.map((st, i) => {
+    const state = i < current ? 'done' : i === current ? 'active' : 'pending';
+    const docStr = i <= current ? st.doc.split('—')[0].trim() + ' ' + st.docNum : '';
+    return `<div class="tracker-row"><div class="tracker-dot ${state}"></div><span class="tracker-label ${state}">${st.label}</span><span class="tracker-docnum">${docStr}</span></div>`;
+  }).join('');
+
+  const fieldsHtml = s.fields.map(f => `<div class="field-box"><div class="field-label">${f.label}</div><div class="field-val">${f.val}</div></div>`).join('');
+  const tagsHtml = s.tags.map(t => `<span class="tag ${t.cls}">${t.text}</span>`).join('');
+  const noteHtml = s.note ? `<div class="note-${s.noteType}">${s.note}</div>` : '';
+
+  document.getElementById('detail-card').innerHTML = `
+    <div class="detail-header">
+      <div>
+        <div class="detail-title">${s.label} — ${s.doc.split('—')[1] ? s.doc.split('—')[1].trim() : s.doc}</div>
+        <div class="detail-tcode">T-code: <span>${s.tcode}</span></div>
+      </div>
+      <div class="doc-badge">Doc # ${s.docNum}</div>
+    </div>
+    <div class="detail-desc">${s.desc}</div>
+    <div class="fields-grid">${fieldsHtml}</div>
+    <div class="tags-row">${tagsHtml}</div>
+    ${noteHtml}
+  `;
+}
+
+function navigate(dir) { const n = current + dir; if (n >= 0 && n < stages.length) { current = n; render(); } }
+function goTo(i) { current = i; render(); }
+render();
+</script>
+</body>
+</html>
